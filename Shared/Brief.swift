@@ -54,6 +54,23 @@ struct Brief: Equatable {
     }
 }
 
+extension Brief.Icon {
+    init?(name: String) {
+        switch name.lowercased() {
+        case "buy": self = .buy
+        case "reviews": self = .reviews
+        case "facts": self = .facts
+        case "people": self = .people
+        case "date": self = .date
+        case "place": self = .place
+        case "warning": self = .warning
+        case "link": self = .link
+        case "idea": self = .idea
+        default: return nil
+        }
+    }
+}
+
 extension Brief.Section {
     var link: URL? {
         guard let linkURL, let url = URL(string: linkURL.trimmingCharacters(in: .whitespacesAndNewlines)),

@@ -25,6 +25,11 @@ targets:
       - path: App
       - path: Shared
       - path: Resources
+    entitlements:
+      path: App/ShareExperiment.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.jonasleupe.ShareExperiment
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jonasleupe.ShareExperiment
@@ -49,6 +54,11 @@ targets:
           - AudioProbe.swift
           - ProbeView.swift
       - path: Resources
+    entitlements:
+      path: ShareExtension/ShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.jonasleupe.ShareExperiment
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jonasleupe.ShareExperiment.ShareExtension

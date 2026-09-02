@@ -36,6 +36,10 @@ final class ChatModel {
     private(set) var preview: LinkPreview?
     private(set) var brief: BriefSnapshot?
     private(set) var isSummarizing = false
+    /// Sections written by OpenRouter when the on-device model isn't available.
+    private(set) var webSections: [BriefSnapshot.SectionSnapshot] = []
+    private(set) var isResearching = false
+    var webErrorText: String?
     private(set) var messages: [Message] = []
     private(set) var isResponding = false
     var errorText: String?
@@ -46,18 +50,25 @@ final class ChatModel {
     /// Debug aid: stream canned answers instead of calling the model, so the
     /// design can be reviewed on machines without Apple Intelligence.
     let usesSampleAnswers: Bool
+    /// Set when the user saved an OpenRouter key. The brief still comes from the
+    /// on-device model; only follow-up questions go to Luna (with web search).
+    /// OpenRouter also fills in when Apple Intelligence isn't available at all.
+    private let openRouter: OpenRouterClient?
     private var session: LanguageModelSession?
     private var loadTask: Task<Void, Never>?
+
+    var usesWeb: Bool { openRouter != nil }
 
     init(content: SharedContent, usesSampleAnswers: Bool = false) {
         self.content = content
         self.usesSampleAnswers = usesSampleAnswers
+        self.openRouter = usesSampleAnswers ? nil : OpenRouterKeyStore.load().map { OpenRouterClient(apiKey: $0) }
         refreshAvailability()
         loadTask = Task { [weak self] in await self?.load() }
     }
 
     var canSend: Bool {
-        availability == .available
+        (availability == .available || usesWeb)
             && phase == .ready
             && !isResponding
             && !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -82,6 +93,8 @@ final class ChatModel {
     func retryLoad() {
         loadTask?.cancel()
         brief = nil
+        webSections = []
+        webErrorText = nil
         messages.removeAll()
         errorText = nil
         loadTask = Task { [weak self] in await self?.load() }
@@ -150,7 +163,10 @@ final class ChatModel {
 
     private func summarize() async {
         if usesSampleAnswers { await SampleAnswers.streamBrief(into: self); return }
-        guard let session, availability == .available else { return }
+        guard let session, availability == .available else {
+            if usesWeb { await summarizeOnWeb() }
+            return
+        }
         isSummarizing = true
         errorText = nil
         brief = nil
@@ -183,6 +199,64 @@ final class ChatModel {
         isSummarizing = false
     }
 
+    // MARK: - Web (OpenRouter)
+
+    /// No on-device model: let OpenRouter write the summary and the sections.
+    private func summarizeOnWeb() async {
+        guard let openRouter else { return }
+        isSummarizing = true
+        isResearching = true
+        webErrorText = nil
+        do {
+            let sections = try await openRouter.research(
+                context: contextBlock,
+                existingSummary: nil,
+                kind: preview?.kind ?? .page
+            )
+            // First section doubles as the summary paragraph when the model can't run locally.
+            var snapshot = BriefSnapshot()
+            snapshot.summary = preview?.description ?? preview?.title ?? preview?.bodyText.map { String($0.prefix(220)) }
+            snapshot.sections = Self.snapshots(from: sections)
+            brief = snapshot
+        } catch {
+            webErrorText = error.localizedDescription
+        }
+        isSummarizing = false
+        isResearching = false
+    }
+
+    private static func snapshots(from sections: [OpenRouterClient.ResearchSection]) -> [BriefSnapshot.SectionSnapshot] {
+        sections.enumerated().map { index, section in
+            BriefSnapshot.SectionSnapshot(
+                id: 100 + index,
+                title: section.title,
+                body: section.body,
+                icon: Brief.Icon(name: section.icon) ?? .facts,
+                linkURL: section.url
+            )
+        }
+    }
+
+    /// The transcript as OpenRouter messages: context + brief as the system prompt,
+    /// then the conversation so far (including the just-appended user turn).
+    private func webMessages() -> [OpenRouterClient.ChatMessage] {
+        var system = Self.instructions(context: contextBlock)
+        var known: [String] = []
+        if let summary = brief?.summary, !summary.isEmpty { known.append(summary) }
+        for section in (brief?.sections ?? []) + webSections {
+            if let title = section.title, let body = section.body { known.append("\(title): \(body)") }
+        }
+        if !known.isEmpty {
+            system += "\n\nWHAT THE USER HAS ALREADY BEEN TOLD:\n" + known.joined(separator: "\n")
+        }
+        system += "\n\nYou can search the web. Use it for anything current (availability, prices, news) and mention the source site in a few words."
+        var out: [OpenRouterClient.ChatMessage] = [.init(role: .system, content: system)]
+        for message in messages where !(message.role == .assistant && message.text.isEmpty) {
+            out.append(.init(role: message.role == .user ? .user : .assistant, content: message.text))
+        }
+        return out
+    }
+
     // MARK: - Sending
 
     func send(_ overridePrompt: String? = nil) {
@@ -193,6 +267,32 @@ final class ChatModel {
             SampleAnswers.reply(to: prompt, in: self)
             return
         }
+        if let openRouter {
+            if overridePrompt == nil { input = "" }
+            errorText = nil
+            messages.append(.init(role: .user, text: prompt))
+            let assistantIndex = messages.count
+            messages.append(.init(role: .assistant, text: "", isStreaming: true))
+            isResponding = true
+            let started = Date()
+            let history = webMessages()
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    for try await delta in openRouter.streamAnswer(messages: history) {
+                        self.messages[assistantIndex].text += delta
+                    }
+                } catch {
+                    if self.messages[assistantIndex].text.isEmpty { self.messages[assistantIndex].text = "" }
+                    self.errorText = error.localizedDescription
+                }
+                self.messages[assistantIndex].isStreaming = false
+                self.messages[assistantIndex].thinkingSeconds = max(1, Int(Date().timeIntervalSince(started).rounded()))
+                self.isResponding = false
+            }
+            return
+        }
+
         guard let session else { return }
 
         if overridePrompt == nil { input = "" }
@@ -324,7 +424,7 @@ enum SampleAnswers {
         let answer = "No official availability in Europe yet. Matic currently only ships to US addresses."
         model.beginReply(to: prompt)
         Task {
-            try? await Task.sleep(for: .milliseconds(1400))
+            try? await Task.sleep(for: .seconds(3))   // long enough to see the thinking state
             let words = answer.split(separator: " ")
             for i in words.indices {
                 try? await Task.sleep(for: .milliseconds(45))

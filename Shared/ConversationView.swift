@@ -37,14 +37,12 @@ struct ConversationView: View {
     private func reply(_ message: ChatModel.Message) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             DiaCaptionRow(text: message.isStreaming
-                          ? "Thinking…"
-                          : "Thought for \(message.thinkingSeconds ?? 1)s")
+                          ? (model.usesWeb ? "Searching the web" : "Thinking")
+                          : (model.usesWeb ? "Searched the web for \(message.thinkingSeconds ?? 1)s"
+                                           : "Thought for \(message.thinkingSeconds ?? 1)s"),
+                          shimmering: message.isStreaming)
 
-            if message.text.isEmpty && message.isStreaming {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(DiaTheme.secondaryLabel)
-            } else if !message.text.isEmpty {
+            if !message.text.isEmpty {
                 DiaBodyText(message.text)
                     .textSelection(.enabled)
             }

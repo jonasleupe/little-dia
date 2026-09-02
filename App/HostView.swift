@@ -8,7 +8,8 @@ struct HostView: View {
     @State private var urlString = "https://x.com/jack/status/20"
     @State private var pastedText = ""
     @State private var simulated: SharedContent?
-    @State private var useSampleAnswers = false
+    /// Launch with `-sampleAnswers` to start with canned answers on (design review / UI tests).
+    @State private var useSampleAnswers = ProcessInfo.processInfo.arguments.contains("-sampleAnswers")
 
     var body: some View {
         NavigationStack {
@@ -18,11 +19,19 @@ struct HostView: View {
                 }
 
                 Section {
+                    OpenRouterKeyRow()
+                } header: {
+                    Text("Web search (OpenRouter)")
+                } footer: {
+                    Text("The summary always comes from Apple Intelligence on device. With a key saved, follow-up questions go to \(OpenRouterKeyStore.modelDisplayName) with web search, and the shared page's content is sent along to OpenRouter. Without a key everything stays on device.")
+                }
+
+                Section {
                     Text("""
                     Open X, Safari or any app, tap Share, and choose **Little Dia**. \
                     A sheet opens with a preview of what you shared, a summary from \
                     Apple's on-device model, and a place to ask follow-up questions. \
-                    Only the page itself is fetched; nothing is sent to a cloud model.
+                    Without an OpenRouter key, only the page itself is fetched and nothing is sent to a cloud model.
                     """)
                     .font(.footnote)
                 } header: {
@@ -136,5 +145,56 @@ private struct AvailabilityRow: View {
                 status = ChatModel.describe(reason)
             }
         }
+    }
+}
+
+private struct OpenRouterKeyRow: View {
+    @State private var draft = ""
+    @State private var hasKey = OpenRouterKeyStore.hasKey
+    @State private var status: String?
+    @FocusState private var fieldFocused: Bool
+
+    var body: some View {
+        HStack {
+            Image(systemName: hasKey ? "checkmark.circle.fill" : "circle.dashed")
+                .foregroundStyle(hasKey ? .green : .secondary)
+            Text(hasKey ? "Key saved · \(OpenRouterKeyStore.modelDisplayName)" : "No key · on-device only")
+                .font(.footnote)
+        }
+
+        SecureField("sk-or-v1-…", text: $draft)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .focused($fieldFocused)
+            .submitLabel(.done)
+            .onSubmit(save)
+
+        HStack {
+            Button("Save key", action: save)
+                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+            if hasKey {
+                Spacer()
+                Button("Remove", role: .destructive) {
+                    fieldFocused = false
+                    OpenRouterKeyStore.remove()
+                    hasKey = OpenRouterKeyStore.hasKey
+                    draft = ""
+                    status = "Key removed."
+                }
+            }
+        }
+        .font(.footnote)
+
+        if let status {
+            Text(status).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func save() {
+        fieldFocused = false
+        let ok = OpenRouterKeyStore.save(draft)
+        hasKey = OpenRouterKeyStore.hasKey
+        status = ok ? "Saved to the Keychain (shared with the extension)." : "Couldn't save the key to the Keychain."
+        if ok { draft = "" }
     }
 }

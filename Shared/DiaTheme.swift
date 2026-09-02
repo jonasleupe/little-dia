@@ -125,8 +125,11 @@ struct DiaBodyText: View {
 }
 
 /// The Dia mark with a caption next to it ("Summarized for you by Dia", "Thought for 14s").
+/// Pass `shimmering: true` while something is in progress to get the sweeping
+/// "thinking state" label instead of a spinner.
 struct DiaCaptionRow: View {
     let text: String
+    var shimmering: Bool = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -134,11 +137,79 @@ struct DiaCaptionRow: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 12, height: 12)
-            Text(text)
-                .font(DiaTheme.caption)
-                .tracking(DiaTheme.captionTracking)
-                .foregroundStyle(DiaTheme.captionLabel)
+            if shimmering {
+                ShimmerText(text, font: DiaTheme.caption, tracking: DiaTheme.captionTracking, color: DiaTheme.captionLabel)
+            } else {
+                Text(text)
+                    .font(DiaTheme.caption)
+                    .tracking(DiaTheme.captionTracking)
+                    .foregroundStyle(DiaTheme.captionLabel)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A label with a lighter band sweeping left → right, after aicss.dev's
+/// "Thinking State": a 300%-wide gradient (solid → 45% → solid) whose position
+/// runs 100% → 0% over a 2.25 s cycle, holding for the first and last 18%.
+struct ShimmerText: View {
+    let text: String
+    let font: Font
+    let tracking: CGFloat
+    let color: Color
+
+    private static let period: TimeInterval = 2.25
+    /// CSS `cubic-bezier(0.25, 0.1, 0.25, 1)` — the default "ease".
+    private static let curve = UnitCurve.bezier(startControlPoint: UnitPoint(x: 0.25, y: 0.1),
+                                                endControlPoint: UnitPoint(x: 0.25, y: 1))
+
+    init(_ text: String, font: Font, tracking: CGFloat, color: Color) {
+        self.text = text
+        self.font = font
+        self.tracking = tracking
+        self.color = color
+    }
+
+    var body: some View {
+        TimelineView(.animation) { context in
+            let cycle = context.date.timeIntervalSinceReferenceDate
+                .truncatingRemainder(dividingBy: Self.period) / Self.period
+            let linear = min(max((cycle - 0.18) / 0.64, 0), 1)
+            let progress = Self.curve.value(at: linear)
+
+            // Like CSS `color: transparent` + `background-clip: text`: only the
+            // gradient shows, through the glyphs.
+            label
+                .foregroundStyle(.clear)
+                .overlay {
+                    GeometryReader { geo in
+                        let width = geo.size.width
+                        LinearGradient(
+                            stops: [
+                                .init(color: color, location: 0),
+                                .init(color: color, location: 0.30),
+                                .init(color: color.opacity(0.45), location: 0.45),
+                                .init(color: color.opacity(0.45), location: 0.55),
+                                .init(color: color, location: 0.70),
+                                .init(color: color, location: 1),
+                            ],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                        .frame(width: width * 3, height: geo.size.height)
+                        // background-position 100% → 0% with a 300% background-size.
+                        .offset(x: -2 * width * (1 - progress))
+                    }
+                    .mask(label)
+                }
+        }
+        .accessibilityLabel(text)
+    }
+
+    private var label: some View {
+        Text(text)
+            .font(font)
+            .tracking(tracking)
+            .fixedSize()
     }
 }

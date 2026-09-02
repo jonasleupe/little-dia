@@ -44,7 +44,7 @@ struct InnerSheetView: View {
                     LinkPreviewCard(preview: model.preview, isLoading: model.phase == .resolving)
                         .padding(.horizontal, inset)
 
-                    if case .unavailable(let reason) = model.availability {
+                    if case .unavailable(let reason) = model.availability, !model.usesWeb {
                         unavailable(reason)
                     } else {
                         BriefView(model: model)

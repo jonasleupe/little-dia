@@ -8,7 +8,8 @@ struct BriefView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
             VStack(alignment: .leading, spacing: 16) {
-                DiaCaptionRow(text: model.hasBrief || !model.isSummarizing ? "Summarized for you by Dia" : "Summarizing for you…")
+                DiaCaptionRow(text: model.hasBrief || !model.isSummarizing ? "Summarized for you by Dia" : "Summarizing for you",
+                              shimmering: !model.hasBrief && model.isSummarizing)
                 if let summary = model.brief?.summary, !summary.isEmpty {
                     DiaBodyText(summary)
                 } else if model.isSummarizing || model.phase == .resolving {
@@ -19,11 +20,30 @@ struct BriefView: View {
             }
             .padding(.horizontal, DiaTheme.contentInset)
 
-            if let sections = model.brief?.sections, !sections.isEmpty {
+            let sections = (model.brief?.sections ?? []) + model.webSections
+            if !sections.isEmpty {
                 VStack(alignment: .leading, spacing: 24) {
                     ForEach(sections) { section in
                         SectionRow(section: section, preview: model.preview)
                     }
+                }
+                .padding(.horizontal, DiaTheme.contentInset)
+            }
+
+            if model.isResearching {
+                VStack(alignment: .leading, spacing: 16) {
+                    DiaCaptionRow(text: "Searching the web with \(OpenRouterKeyStore.modelDisplayName)", shimmering: true)
+                    placeholderLines
+                }
+                .padding(.horizontal, DiaTheme.contentInset)
+            } else if let webError = model.webErrorText {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "globe")
+                        .font(.system(size: 12))
+                        .foregroundStyle(DiaTheme.secondaryLabel)
+                    Text(webError)
+                        .font(DiaTheme.caption)
+                        .foregroundStyle(DiaTheme.captionLabel)
                 }
                 .padding(.horizontal, DiaTheme.contentInset)
             }
