@@ -1,0 +1,13 @@
+# XcodeGen output — regenerate with `xcodegen generate`
+ShareExperiment.xcodeproj/
+
+# Xcode
+xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+build/
+.DS_Store
+
+# Secrets (none today — here in case the experiment gains a cloud fallback)
+*.xcconfig.local
+Secrets.swift
