@@ -21,10 +21,11 @@ questions. Nothing leaves your device unless you opt in to web search.
 
 ## Why this exists
 
-This is one of two prototypes from a 48-hour deep dive into what Dia could be
-on mobile, built in the open for The Browser Company's AI Prototyper Residency.
-The whole build was live-tweeted:
-[the thread on X](https://x.com/jonasleupe/thread/2094707380084715579).
+This is prototype #1 from a 48-hour exploration of what Dia on mobile could
+be, live-tweeted in this thread:
+https://x.com/jonasleupe/thread/2094707380084715579
+
+Not affiliated with The Browser Company; Dia is theirs.
 
 The thinking behind it, in short:
 
